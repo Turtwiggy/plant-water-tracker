@@ -15,10 +15,6 @@ using namespace plantproject;
 #include <string>
 #include <vector>
 
-//
-// MODELS
-//
-
 namespace plantproject {
 
 struct Plant
@@ -26,6 +22,7 @@ struct Plant
   int version = 0;
   std::string key;
   std::string description;
+  // std::vector<something> watered_at;
 };
 
 using json = nlohmann::json;
@@ -66,8 +63,6 @@ from_json(const json& j, Plant& p)
       break;
   }
 };
-
-}; // namespace plantproject
 
 void
 save(const entt::registry& registry, std::string path)
@@ -113,6 +108,8 @@ load_if_exists(entt::registry& registry, std::string path)
   if (file)
     load(registry, path);
 }
+
+}; // namespace plantproject
 
 //
 // QUERIES
@@ -181,16 +178,14 @@ list_plants_impl(const entt::registry& registry)
 void
 list_plant_info_impl(const entt::registry& registry, const std::string name)
 {
-  std::string description{ "N/A" };
-
   const auto plant = get_plant(registry, name);
   if (plant.has_value()) {
-    auto opt = get_description_of_plant(registry, plant.value());
-    // if (optional_desc)
-    //   description = optional_desc;
+    const auto opt = get_description_of_plant(registry, plant.value());
+    if (opt.has_value())
+      std::cout << "Description: " << opt.value() << std::endl;
+  } else {
+    std::cout << "Description: N/A" << std::endl;
   }
-
-  std::cout << "Description: " << description << std::endl;
 }
 
 void
@@ -214,9 +209,9 @@ main()
   entt::registry registry;
   std::string cmd_add("add"); // usage: "add steve"
   std::string cmd_list("list");
-  std::string cmd_list_param("-a"); // usage: "list -a" list all plants
-  std::string cmd_list_param("-c"); // usage: "list -c" list all commands
-  std::string cmd_info("info");     // usage" "info steve"
+  std::string cmd_list_param_all_plants("-a"); // usage: "list -a" list all plants
+  std::string cmd_list_param_all_cmds("-c");   // usage: "list -c" list all commands
+  std::string cmd_info("info");                // usage" "info steve"
   std::string cmd_save("save");
   std::string cmd_load("load");
   std::string cmd_quit("quit");
@@ -265,7 +260,7 @@ main()
           delete_plant_impl(registry, token);
           save(registry, filepath); // save after deleting a plant
         }
-        if (cmd_is_list && token.compare(cmd_list_param) == 0) {
+        if (cmd_is_list && token.compare(cmd_list_param_all_plants) == 0) {
           list_plants_impl(registry);
         }
         if (cmd_is_info) {
