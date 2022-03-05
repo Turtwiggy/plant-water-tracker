@@ -8,6 +8,8 @@ using namespace plantproject;
 #include <nlohmann/json.hpp>
 
 // std libs
+#include <chrono>
+#include <ctime>
 #include <fstream>
 #include <iostream>
 #include <optional>
@@ -15,14 +17,18 @@ using namespace plantproject;
 #include <string>
 #include <vector>
 
+using MyClock = std::chrono::system_clock;
+using MyTimepoint = MyClock::time_point;
+using MyDuration = MyClock::duration;
+
 namespace plantproject {
 
 struct Plant
 {
-  int version = 0;
+  int version = 1;
   std::string key;
   std::string description;
-  // std::vector<something> watered_at;
+  std::vector<uint64_t> watered_at;
 };
 
 using json = nlohmann::json;
@@ -30,36 +36,29 @@ using json = nlohmann::json;
 void
 to_json(json& j, const Plant& p)
 {
-  std::cout << "to_json: " << p.version << std::endl;
-  switch (p.version) {
-    case 2:
-      j = json{
-        { "version", p.version },
-        { "key", p.key },
-        { "description", p.description },
-      };
-      break;
-    case 1: // DEPRECATED
-      j = json{
-        { "version", p.version },
-        { "key", p.key },
-      };
-      break;
-  }
+  int V = Plant().version;
+  // std::cout << "to_json: " << V << std::endl;
+
+  json jvec(p.watered_at);
+  j = json{
+    { "version", V },
+    { "key", p.key },
+    { "description", p.description },
+    { "watered_at", jvec },
+  };
 };
 
 void
 from_json(const json& j, Plant& p)
 {
   int version = j.at("version").get_to(p.version);
-  std::cout << "from_json: " << version << std::endl;
+  // std::cout << "from_json: " << version << std::endl;
+
   switch (version) {
-    case 2:
-      j.at("key").get_to(p.key);
-      j.at("description").get_to(p.description);
-      break;
     case 1:
       j.at("key").get_to(p.key);
+      j.at("description").get_to(p.description);
+      j.at("watered_at").get_to(p.watered_at);
       break;
   }
 };
@@ -107,7 +106,7 @@ load_if_exists(entt::registry& registry, std::string path)
   std::ifstream file(path.c_str());
   if (file)
     load(registry, path);
-}
+};
 
 }; // namespace plantproject
 
@@ -118,22 +117,23 @@ load_if_exists(entt::registry& registry, std::string path)
 int
 num_plants_available(const entt::registry& registry)
 {
-  int num = 0;
   auto view = registry.view<const Plant>();
-  view.each([&num](const auto& plant) { num++; });
-  return num;
+  return view.size();
 };
 
 std::optional<entt::entity>
 get_plant(const entt::registry& registry, std::string name)
 {
+  std::optional<entt::entity> found = std::nullopt;
+
   auto view = registry.view<const Plant>();
-  view.each([&name](auto entity, const auto& plant) {
+  view.each([&found, &name](auto entity, const auto& plant) {
     if (plant.key == name) {
-      return entity;
+      found = entity;
     }
   });
-  return std::nullopt;
+
+  return found;
 }
 
 std::optional<std::string>
@@ -147,20 +147,49 @@ get_description_of_plant(const entt::registry& registry, entt::entity entity)
 }
 
 //
-// CRUD
+// Plant CRUD
 //
+
+void
+print_plant_water_status(const Plant& p)
+{
+  int show_last_x_waters = 5;
+  for (int i = p.watered_at.size() - 1; i >= 0; i--) {
+    const auto epoch_time = p.watered_at[i];
+    const MyDuration d(epoch_time);
+    const MyTimepoint tp(d);
+    const std::time_t time = MyClock::to_time_t(tp);
+    auto* tm_gmt = std::gmtime(&time);
+
+    std::cout << "Watered at: " << tm_gmt->tm_sec << ":" << tm_gmt->tm_min << ":" << tm_gmt->tm_hour << " GMT "
+              << tm_gmt->tm_mday << "/" << (1 + tm_gmt->tm_mon) << "/" << (1900 + tm_gmt->tm_year) << std::endl;
+
+    show_last_x_waters -= 1;
+    if (show_last_x_waters == 0)
+      break;
+  }
+
+  if (p.watered_at.size() > 0)
+    std::cout << "Watered: " << p.watered_at.size() << " times" << std::endl;
+  else
+    std::cout << "Plant has never been watered!" << std::endl;
+}
 
 void
 print_plant(const Plant& p)
 {
-  std::cout << "- " << p.key << std::endl;
+  std::cout << "~~~~~ " << p.key << " ~~~~~" << std::endl;
+  std::cout << "Description: " << p.description << std::endl;
+
+  print_plant_water_status(p);
+
+  std::cout << "~~~~~~~~~~~~" << std::endl;
 };
 
 void
 add_plant_impl(entt::registry& registry, const std::string name, const std::string description)
 {
   Plant p;
-  p.version = 2;
   p.key = name;
   p.description = "(Empty)";
 
@@ -178,14 +207,14 @@ list_plants_impl(const entt::registry& registry)
 void
 list_plant_info_impl(const entt::registry& registry, const std::string name)
 {
-  const auto plant = get_plant(registry, name);
+  const auto& plant = get_plant(registry, name);
   if (plant.has_value()) {
-    const auto opt = get_description_of_plant(registry, plant.value());
-    if (opt.has_value())
-      std::cout << "Description: " << opt.value() << std::endl;
-  } else {
-    std::cout << "Description: N/A" << std::endl;
+    const auto& p = registry.get<Plant>(plant.value());
+    print_plant(p);
+    return;
   }
+
+  std::cout << "No info for plant: " << name << std::endl;
 }
 
 void
@@ -203,20 +232,45 @@ delete_plant_impl(entt::registry& registry, std::string name)
     registry.destroy(e);
 }
 
+//
+// Watering-status CRUD
+//
+
+void
+add_water_to_plant_impl(entt::registry& registry, std::string name)
+{
+  const auto& plant = get_plant(registry, name);
+  if (plant.has_value()) {
+
+    MyTimepoint now = MyClock::now();
+    const auto ts = now.time_since_epoch();
+
+    auto& p = registry.get<Plant>(plant.value());
+    p.watered_at.push_back(ts.count());
+    return;
+  }
+
+  std::cout << "No info for plant: " << name << std::endl;
+};
+
 int
 main()
 {
   entt::registry registry;
-  std::string cmd_add("add"); // usage: "add steve"
+
+  // plant CRUD
   std::string cmd_list("list");
   std::string cmd_list_param_all_plants("-a"); // usage: "list -a" list all plants
-  std::string cmd_list_param_all_cmds("-c");   // usage: "list -c" list all commands
+  std::string cmd_add("add");                  // usage: "add steve"
+  std::string cmd_delete("delete");            // usage: "delete steve"
   std::string cmd_info("info");                // usage" "info steve"
+  std::string cmd_water("water");              // usage" "water steve"
+
+  // cli-app stuff
   std::string cmd_save("save");
   std::string cmd_load("load");
   std::string cmd_quit("quit");
-  std::string cmd_delete("delete"); // usage: "delete steve"
-  std::string filepath("./plants.txt");
+  std::string filepath("./plants.json");
   std::string input;
 
   load_if_exists(registry, filepath);
@@ -237,6 +291,7 @@ main()
     bool cmd_is_list = false;
     bool cmd_is_delete = false;
     bool cmd_is_info = false;
+    bool cmd_is_water = false;
 
     for (int i = 0; i < tokens.size(); i++) {
       std::string token = tokens[i];
@@ -248,6 +303,7 @@ main()
         cmd_is_delete |= token.compare(cmd_delete) == 0;
         cmd_is_list |= token.compare(cmd_list) == 0;
         cmd_is_info |= token.compare(cmd_info) == 0;
+        cmd_is_water |= token.compare(cmd_water) == 0;
       }
 
       // second token
@@ -266,16 +322,18 @@ main()
         if (cmd_is_info) {
           list_plant_info_impl(registry, token);
         }
+        if (cmd_is_water) {
+          add_water_to_plant_impl(registry, token);
+          save(registry, filepath); // save after watering a plant
+        }
       }
     }
 
-    // process line for "save" command
     if (input.compare(cmd_save) == 0) {
       std::cout << "saving..." << std::endl;
       save(registry, filepath);
     }
 
-    // process line for "load" command
     if (input.compare(cmd_load) == 0) {
       std::cout << "loading.." << std::endl;
       load_if_exists(registry, filepath);
