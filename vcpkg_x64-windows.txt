@@ -1,0 +1,4 @@
+nlohmann-json
+entt
+--triplet
+x64-windows
