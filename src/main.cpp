@@ -161,7 +161,7 @@ print_plant_water_status(const Plant& p)
     const std::time_t time = MyClock::to_time_t(tp);
     auto* tm_gmt = std::gmtime(&time);
 
-    std::cout << "Watered at: " << tm_gmt->tm_sec << ":" << tm_gmt->tm_min << ":" << tm_gmt->tm_hour << " GMT "
+    std::cout << "Watered at: " << tm_gmt->tm_hour << ":" << tm_gmt->tm_min << ":" << tm_gmt->tm_sec << " GMT "
               << tm_gmt->tm_mday << "/" << (1 + tm_gmt->tm_mon) << "/" << (1900 + tm_gmt->tm_year) << std::endl;
 
     show_last_x_waters -= 1;
@@ -270,7 +270,7 @@ main()
   std::string cmd_save("save");
   std::string cmd_load("load");
   std::string cmd_quit("quit");
-  std::string filepath("./plants.json");
+  std::string filepath("plants.json");
   std::string input;
 
   load_if_exists(registry, filepath);
